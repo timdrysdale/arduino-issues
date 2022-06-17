@@ -6,7 +6,23 @@ Repo for sketches that (attempt) to reproduce issues our team report with arduin
 
 ### Issue00 - DigitalRead
 
-One of the team reports that digitalRead is not working correctly on a pin on the analogue port, when the ADC is enabled. 
+One of the team reports that digitalRead is not working correctly on a pin on the analogue port, when the ADC is enabled. They've since identified it only occurs if there is a mix of digitalRead and analogRead being performed on the same pin.
+
+**Thoughts:** mixing analogRead and digitalRead seems like a design smell to me, so worth reconsidering what we are trying to do and find a way to stay in either the analogue or digital domain. E.g. if a high speed PWM signal, and we want to know the duty cycle, and whether it has paused, then this is a digital domain problem, and should be solved by tracking the PWM signal using the appropriate hardware features, or interrupts, rather than trying to average it with the analogRead. If we only ever care about the analogue value, and it so happens that the PWM frequency is an implementation detail on the transmitting side, we can stay in the analogue domain instead. Of course, there may also be a way to unpick which registers are set/unset to change mode from digitalRead to analogRead, and issue these register settings directly. This has the side effect of the making the code unportable to other micros.
+
+**As an interim hot-fix:** read only analogue values, and if you need to know whether the signal is "truthy", do a conversion to bool by comparing to a threshold. 
+
+```
+int thresh; // global
+
+thresh = 511; // in setup
+
+// in main loop
+ci = analogRead(15);
+bi = ci >= thresh;
+```  
+
+Read on for details of the attempts to reproduce and fix the problem.
 
 #### Basic read write
 First let's try a basic digital read and write from digital port to analogue port, with no code relating to analogue functions. This requires two wires
@@ -74,3 +90,58 @@ Errors 0.00/12861.00 attempts [10->10] (ignore: 3788)
 ```
 
 Also no problem showing up quickly.
+
+
+#### Do both digital and analog read on same pin
+
+This is the issue! See [sketch](./issue00/switch-read-write/switch-read-write.ino)
+
+Essentially, read a pin both ways (as to why we want to do this - is a separate issue!)
+
+```
+bi = digitalRead(15);
+ci = analogRead(15);
+```
+
+```
+Errors 3096.00/6192.00 attempts [01->00] (ignore: 1023)
+Errors 3096.00/6193.00 attempts [10->10] (ignore: 2)
+Errors 3097.00/6194.00 attempts [01->00] (ignore: 1023)
+Errors 3097.00/6195.00 attempts [10->10] (ignore: 0)
+```
+
+### Mitigation
+
+a/ if high speed digital line, is analogue read needed? Perhaps using hardware to count pulses or measure duty cycle would be more appropriate.
+
+b/ if must do analogue read but also want a truthy value, consider just doing analogRead and converting to `bool`
+
+e.g. [sketch](./issues00/mitigate/mitigate.ino)
+
+```
+int thresh; // global
+
+thresh = 511; // in setup
+
+// in main loop
+ci = analogRead(15);
+bi = ci >= thresh;
+```  
+
+Now we can do both:
+
+```
+Errors 0.00/26390.00 attempts [01->01] (ignore: 1023)
+Errors 0.00/26391.00 attempts [10->10] (ignore: 1)
+Errors 0.00/26392.00 attempts [01->01] (ignore: 1023)
+Errors 0.00/26393.00 attempts [10->10] (ignore: 3)
+Errors 0.00/26394.00 attempts [01->01] (ignore: 1023)
+Errors 0.00/26395.00 attempts [10->10] (ignore: 0)
+Errors 0.00/26396.00 attempts [01->01] (ignore: 1023)
+Errors 0.00/26397.00 attempts [10->10] (ignore: 1)
+Errors 0.00/26398.00 attempts [01->01] (ignore: 1023)
+Errors 0.00/26399.00 attempts [10->10] (ignore: 0)
+Errors 0.00/26400.00 attempts [01->01] (ignore: 1021)
+Errors 0.00/26401.00 attempts [10->10] (ignore: 0)
+```
+
