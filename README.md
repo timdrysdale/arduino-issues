@@ -8,9 +8,9 @@ Repo for sketches that (attempt) to reproduce issues our team report with arduin
 
 One of the team reports that digitalRead is not working correctly on a pin on the analogue port, when the ADC is enabled. They've since identified it only occurs if there is a mix of digitalRead and analogRead being performed on the same pin.
 
-**Thoughts:** mixing analogRead and digitalRead seems like a design smell to me, so worth reconsidering what we are trying to do and find a way to stay in either the analogue or digital domain. E.g. if a high speed PWM signal, and we want to know the duty cycle, and whether it has paused, then this is a digital domain problem, and should be solved by tracking the PWM signal using the appropriate hardware features, or interrupts, rather than trying to average it with the analogRead. If we only ever care about the analogue value, and it so happens that the PWM frequency is an implementation detail on the transmitting side, we can stay in the analogue domain instead. Of course, there may also be a way to unpick which registers are set/unset to change mode from digitalRead to analogRead, and issue these register settings directly. This has the side effect of the making the code unportable to other micros.
+**Thoughts:** would be a cleaner design if it stayed in only the digital or analogue domain - could convert an analogue value to truthiness when required, or derive an analogue value from tracking signal transitions and their timing, inferring the duty cycle and hence analogue value.  Of course, there may also be a way to unpick which registers are set/unset to change mode from digitalRead to analogRead, and issue these register settings directly. This has the side effect of the making the code unportable to other micros.
 
-**As an interim hot-fix:** read only analogue values, and if you need to know whether the signal is "truthy", do a conversion to bool by comparing to a threshold. 
+**As a possible fix staying in analogue domain:** read only analogue values, and if you need to know whether the signal is "truthy", do a conversion to bool by comparing to a threshold. 
 
 ```
 int thresh; // global
